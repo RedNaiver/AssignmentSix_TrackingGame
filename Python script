@@ -1,0 +1,105 @@
+import random
+import time
+import cv2
+import mediapipe as mp
+
+# Hello hellooo, for this assignment ive used the camera and mediapipe hand tracking. So we can pop some balloons with our index finger.
+# The game itself is just trying to pop as many green 'balloons' as possible, while avoiding some red ones which deduct points.
+# Aight let's start.
+
+# Initialize Mediapipe Hand Detector
+mp_hands = mp.solutions.hands
+hands = mp_hands.Hands(min_detection_confidence=0.7, min_tracking_confidence=0.7)
+mp_draw = mp.solutions.drawing_utils
+
+# Let's open the camera
+cap = cv2.VideoCapture(0)
+
+# Some little game variables
+green_circles = []
+red_circles = []
+score = 0
+game_duration = 60  # Game lasts 1 minute
+start_time = time.time()
+
+def generate_circle(frame_width, frame_height):
+    """Generate a random circle within the frame."""
+    x = random.randint(50, frame_width - 50)
+    y = random.randint(50, frame_height - 50)
+    return (x, y)
+
+while True:
+    ret, frame = cap.read()
+    if not ret:
+        break
+
+    # Flip the frame for a mirror effect
+    frame = cv2.flip(frame, 1)
+    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+    # Get frame dimensions
+    h, w, _ = frame.shape
+
+    # Generate new green circles if less than 5 of them existssssss
+    if len(green_circles) < 5:
+        green_circles.append(generate_circle(w, h))
+
+    # Generate new red circles periodically
+    if random.random() < 0.01:  # An itty bitty small chance to spawn red circles (wooow)
+        red_circles.append((generate_circle(w, h), time.time()))
+
+    # Process the frame to detect hands
+    result = hands.process(rgb_frame)
+
+    # Track the index fingerrr
+    index_tip_coords = None
+    if result.multi_hand_landmarks:
+        for hand_landmarks in result.multi_hand_landmarks:
+            mp_draw.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
+
+            index_tip = hand_landmarks.landmark[mp_hands.HandLandmark.INDEX_FINGER_TIP]
+            index_tip_coords = (int(index_tip.x * w), int(index_tip.y * h))
+
+    # Draw and check green circles
+    for circle in green_circles[:]:
+        cv2.circle(frame, circle, 30, (0, 255, 0), -1)  # Green circles
+        if index_tip_coords:
+            distance = ((circle[0] - index_tip_coords[0])**2 + (circle[1] - index_tip_coords[1])**2)**0.5
+            if distance < 30:  # Circle "popped"
+                green_circles.remove(circle)
+                score += 1
+
+    # Draw and check red circles
+    for circle_data in red_circles[:]:
+        circle, spawn_time = circle_data
+        cv2.circle(frame, circle, 30, (0, 0, 255), -1)  # Red circles
+        if index_tip_coords:
+            distance = ((circle[0] - index_tip_coords[0])**2 + (circle[1] - index_tip_coords[1])**2)**0.5
+            if distance < 30:  # Circle touched
+                red_circles.remove(circle_data)
+                score -= 1
+        # Remove red circles after 5 seconds
+        if time.time() - spawn_time > 5:
+            red_circles.remove(circle_data)
+
+    # Then display the score
+    elapsed_time = time.time() - start_time
+    remaining_time = max(0, int(game_duration - elapsed_time))
+    cv2.putText(frame, f"Score: {score}", (10, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
+    cv2.putText(frame, f"Time: {remaining_time}s", (10, 80), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
+
+    # End game after 1 minute, idk adding a timer just made it more "gamey" or smth. lmao
+    if elapsed_time >= game_duration:
+        break
+
+    # Display the video feed
+    cv2.imshow("Popping Circles", frame)
+
+    # Close the window when 'q' is pressed
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
+
+# Display the final score, wow!
+cap.release()
+cv2.destroyAllWindows()
+print(f"Game Over! Your Final Score: {score}")
